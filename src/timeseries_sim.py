@@ -115,8 +115,14 @@ def build_output_writer(net, out_dir, n_steps):
 
 def run_day(net, buses, load_profile, gen_profile, pv_capacity_mw, out_dir,
             use_qu_control=False, use_curtailment=False,
-            v_min=0.95, v_max=1.05, line_max_pct=100.0):
-    """Run a full 24h (len(load_profile) steps) time-series AC power flow.
+            v_min=0.95, v_max=1.05, line_max_pct=100.0, time_steps=None,
+            continue_on_divergence=False):
+    """Run a quasi-static time-series AC power flow over the profiles.
+
+    Despite the name this works for any length (a day, a month, a full
+    8760-hour year). ``time_steps`` restricts the simulation to a subset
+    of positional step indices (used by the annual critical-step
+    screening in annual.py); by default every step is simulated.
 
     Returns the OutputWriter's collected results dict-of-DataFrames.
     """
@@ -126,9 +132,11 @@ def run_day(net, buses, load_profile, gen_profile, pv_capacity_mw, out_dir,
         v_min=v_min, v_max=v_max, line_max_pct=line_max_pct,
     )
     ow = build_output_writer(net, out_dir, n_steps)
+    steps = range(n_steps) if time_steps is None else list(time_steps)
     # the OutputWriter registers itself in net.output_writer on creation;
     # passing it again to run_timeseries is deprecated in pandapower >= 3
-    run_timeseries(net, time_steps=range(n_steps), verbose=False, max_iter=100)
+    run_timeseries(net, time_steps=steps, verbose=False, max_iter=100,
+                   continue_on_divergence=continue_on_divergence)
     return ow.output, curt_ctrl
 
 

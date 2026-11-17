@@ -224,15 +224,18 @@ src/
   network.py            network loading, candidate buses, DER attachment
   profiles.py           synthetic load / PV / wind profile generator
   real_data.py          real data: SimBench year, PVGIS fetch, CSV loader, day selection
+  annual.py             full-year simulation with critical time-step screening
+  annual_study.py       full-year (8784 h) study entry point
   control.py             Q(U) droop + curtailment pandapower controllers
   timeseries_sim.py     time-series simulation wiring (ConstControls, OutputWriter)
   hosting_capacity.py   bisection search algorithms (snapshot + time-series + budget)
   analysis.py            plotting
   run_study.py           end-to-end CLI entry point
-tests/                  29 unit tests (network, profiles, control, real data)
+tests/                  35 unit tests (network, profiles, control, real data, annual)
 data/                   cached SimBench 2016 profiles + provenance (data/README.md)
 results/                 synthetic-run plots
-results/real_data/       real-data run plots and CSV tables
+results/real_data/       real-data run plots and CSV tables (design / typical days)
+results/annual/          full-year run plots and CSV tables
 ```
 
 ## Running it
@@ -244,6 +247,7 @@ python src/run_study.py --data simbench                    # real data (~10 min)
 python src/run_study.py --data pvgis --lat 52.52 --lon 13.40 --pv-year 2020
 python src/run_study.py --data csv --pv-csv data/my_pv.csv
 python src/run_study.py --data simbench --day typical_winter --skip-annual
+python src/annual_study.py --workers 4                     # full year (~20 min)
 python -m pytest tests/ -v
 ```
 
@@ -252,7 +256,6 @@ default hourly resolution — slower but finer-grained.
 
 ## Possible extensions
 
-- Full 8 760-hour annual simulation instead of 12 typical days.
 - PVGIS data for several locations / years to test how sensitive the
   hosting capacity is to climate and weather year.
 - Stochastic/Monte-Carlo placement of PV across buses rather than
