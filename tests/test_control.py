@@ -112,3 +112,19 @@ def test_qu_control_converges_on_heavily_loaded_feeder():
                          "/tmp/hc_qu_conv", use_qu_control=True, use_curtailment=True)
         assert len(out["res_bus.vm_pu"]) == 24
         assert out["res_bus.vm_pu"].max().max() <= 1.05 + 1e-6
+
+
+def test_curtailment_ignores_undervoltage():
+    """Regression: curtailing PV cannot fix an under-voltage (it makes it
+    worse), so the controller must not react to v < v_min."""
+    net = network.build_network()
+    buses = network.candidate_buses(net)
+    sgens = network.attach_sgen_fleet(net, buses, p_mw=0.1)
+    # at nominal peak load the CIGRE feeder already sags to ~0.936 p.u.
+    # while lines stay < 80 % loaded -> pure under-voltage case
+    pp.runpp(net)
+    assert net.res_bus.vm_pu.min() < 0.95
+    assert net.res_bus.vm_pu.max() <= 1.05
+    ctrl = CurtailmentController(net, sgen_idx=sgens, p_rated_mw=[0.1] * len(sgens),
+                                 v_min=0.95, v_max=1.05)
+    assert ctrl.is_converged(net), "under-voltage alone must not trigger curtailment"

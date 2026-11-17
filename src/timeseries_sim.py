@@ -140,6 +140,8 @@ def summarize_violations(output, v_min=0.95, v_max=1.05, line_max_pct=100.0):
         "min_voltage_pu": float(vm.min().min()),
         "max_voltage_pu": float(vm.max().max()),
         "n_voltage_violations": int(((vm < v_min) | (vm > v_max)).sum().sum()),
+        "n_overvoltage": int((vm > v_max).sum().sum()),
+        "n_undervoltage": int((vm < v_min).sum().sum()),
         "max_line_loading_pct": float(line.max().max()) if not line.empty else 0.0,
         "n_line_overloads": int((line > line_max_pct).sum().sum()) if not line.empty else 0,
         "max_trafo_loading_pct": float(trafo.max().max()) if not trafo.empty else 0.0,

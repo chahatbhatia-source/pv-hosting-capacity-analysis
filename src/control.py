@@ -157,8 +157,10 @@ class CurtailmentController(Controller):
         self.curtail_frac[:] = 0.0
 
     def _violations(self, net):
-        v_viol = (net.res_bus.vm_pu.min() < self.v_min) or \
-                 (net.res_bus.vm_pu.max() > self.v_max)
+        # Only OVER-voltage counts: curtailing PV raises nothing and can only
+        # make an under-voltage worse, so reacting to v < v_min (as an
+        # earlier version did) wrongly clipped PV during evening load peaks.
+        v_viol = net.res_bus.vm_pu.max() > self.v_max
         line_viol = net.res_line.loading_percent.max() > self.line_max_pct \
             if len(net.res_line) else False
         return v_viol, line_viol

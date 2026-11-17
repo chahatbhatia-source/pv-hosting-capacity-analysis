@@ -50,9 +50,11 @@ def _worst_case_step(load_profile, pv_profile, net=None) -> int:
 
 
 def _violates(net, v_min, v_max, line_max_pct) -> bool:
+    # (v_min kept in the signature for API compatibility; at the worst-case
+    # max-PV/min-load snapshot under-voltage is not caused by PV)
     if net.res_bus.vm_pu.isna().any():
         return True  # non-convergence counts as a violation
-    if net.res_bus.vm_pu.min() < v_min or net.res_bus.vm_pu.max() > v_max:
+    if net.res_bus.vm_pu.max() > v_max:
         return True
     if len(net.res_line) and net.res_line.loading_percent.max() > line_max_pct:
         return True
@@ -139,7 +141,10 @@ def global_time_series_capacity(net, buses, load_profile, pv_profile, out_dir,
                           use_qu_control=use_qu_control, use_curtailment=use_curtailment,
                           v_min=v_min, v_max=v_max, line_max_pct=line_max_pct)
         summ = summarize_violations(out, v_min, v_max, line_max_pct)
-        ok = summ["n_voltage_violations"] == 0 and summ["n_line_overloads"] == 0
+        # PV can only cause OVER-voltage and overloading; pre-existing
+        # under-voltage at load peaks (no PV output) is not a hosting-
+        # capacity limit and must not make the search return 0 MW.
+        ok = summ["n_overvoltage"] == 0 and summ["n_line_overloads"] == 0
         return ok, out
 
     ok_hi, out_hi = feasible(hi)
