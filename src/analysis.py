@@ -210,7 +210,7 @@ def plot_annual_curtailment_curve(summary: pd.DataFrame, out_dir, budget_pct=5.0
     optionally overlaid with the 12-typical-day estimate."""
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.plot(summary.index, summary["curtailed_pct"], marker="o", linewidth=1.8,
-            color="#2b7a78", label="full year (8760 h)")
+            color="#2b7a78", label="full year (every hour)")
     if typical_days is not None and len(typical_days):
         ax.plot(typical_days.index, typical_days.values, marker="s", linestyle=":",
                 color="#888888", label="12 typical days (estimate)")

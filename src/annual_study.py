@@ -127,6 +127,7 @@ def main():
                              * verify.attrs["step_hours"],
         })
         monthly["curtailed_pct"] = 100 * monthly["curtailed_mwh"] / monthly["potential_mwh"]
+        monthly.index.name = "month"
         monthly.round(3).to_csv(os.path.join(OUT_DIR, "monthly_at_budget_capacity.csv"))
         analysis.plot_curtailment_heatmap(verify, OUT_DIR)
         analysis.plot_monthly_energy(verify, OUT_DIR)

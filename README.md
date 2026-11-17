@@ -178,11 +178,12 @@ Key observations:
    orientation losses) with an unrealistically high evening load
    (0.41 → 0.82 MW/bus without control).
    ![synthetic vs real](results/real_data/synthetic_vs_real_profiles.png)
-2. **The feeder is voltage-limited, not thermally limited.** With real
-   data, line loading stays below ~60 % on all representative days.
-   Over-voltage at the end of
-   the feeder (bus 14 has the lowest per-bus capacity) sets the limit.
-   That is why Q(U) alone already buys +44 %.
+2. **Over-voltage is the first limit; thermal limits follow.** On the
+   representative days line loading stays below ~60 % and over-voltage at
+   the end of the feeder (bus 14 has the lowest per-bus capacity) sets the
+   limit, which is why Q(U) alone already buys +44 %. The full-year run
+   (below) shows lines reaching ~100 % above 1.4 MW/bus, so at high
+   penetration curtailment is also managing thermal limits.
 3. **An annual budget is far less restrictive than a design-day one.**
    Over-voltage only happens on a few clear spring/summer days with low
    load, so 5 % of *annual* yield lets you install ~45 % more PV than
@@ -197,13 +198,80 @@ Seasonal comparison at 0.7 MW/bus (`results/real_data/seasonal_comparison.png`)
 and the full input-data year (`results/real_data/real_data_annual_overview.png`)
 are also generated.
 
+### Full-year simulation (8784 h)
+
+`python src/annual_study.py --workers 4` simulates every hour of 2016
+(a leap year, hence 8784 h) for a sweep of capacities. Outputs are in
+`results/annual/`.
+
+**Critical time-step screening.** With Q(U) and curtailment active, each
+hour needs ~8 iterated power flows, so a brute-force controlled year takes
+~25 min *per capacity*. Instead (`src/annual.py`):
+
+1. simulate the whole year **without control** (1 power flow per hour),
+2. flag *critical* hours: PV producing and uncontrolled max voltage
+   > 1.03 p.u. (0.02 p.u. margin) or line loading > 90 %,
+3. re-simulate **only those hours** with the controllers.
+
+This gives the same answer as controlling every hour, because both
+controllers reset at every time step (hours are independent) and Q(U) can
+only lower voltages above 1.02 p.u. Validation against a fully controlled
+simulation (1–7 May, 1.6 MW/bus) gives identical curtailed energy
+(25.457 MWh) and peak voltage, with 25 instead of 72 hours under
+control (`results/annual/screening_validation.csv`,
+`tests/test_annual.py::test_screening_matches_full_control`). At the
+highest capacity, 1 193 of 8 784 hours (14 %) are critical. The whole
+study (8 capacities on 4 cores, a verification run and two full-year
+bisections) takes ~40 min.
+
+**Results** (uniform PV at all 13 buses):
+
+| Hosting-capacity definition | Full year | Design / typical days (`run_study.py`) |
+|---|---|---|
+| No control, zero violations | **0.80** MW/bus (10.4 MW) | 0.82 (worst-case day) |
+| Q(U) only, zero violations | **1.13** MW/bus (14.7 MW) | 1.18 (worst-case day) |
+| Q(U) + curtailment, ≤ 5 % annual curtailment | **1.68** MW/bus (21.8 MW) | 1.69 (12 typical days) |
+
+Verification run at 1.68 MW/bus: 4.91 % curtailed (730 of 14 863 MWh),
+spread over 234 hours.
+
+![annual curtailment curve](results/annual/annual_curtailment_curve.png)
+
+What the full year adds:
+
+1. **The "worst-case day" is not quite the worst case.** Choosing the
+   design day by maximum PV/load ratio *overestimates* the zero-violation
+   capacity by 2.5–4.5 % (0.82 → 0.80 without control, 1.18 → 1.13 with Q(U)).
+   The binding hours lie on other days, where load, PV and the Q(U)
+   operating point combine differently. Only a full-year simulation
+   catches them.
+2. **12 typical days estimate the budget capacity well (1.69 vs 1.68
+   MW/bus), but not the curve.** The typical-day estimate under-predicts
+   curtailment at 1.4–1.6 MW/bus by up to 40 % (2.0 % vs 3.4 % at 1.6)
+   and (interpolated) over-predicts it around 1.8. That it matches at 5 %
+   is partly luck.
+3. **Violation *duration* matters.** Voltage duration curves show that at
+   1.0 MW/bus the 1.05 p.u. limit is exceeded for only 23 h/yr, yet a
+   zero-violation rule lets those 23 hours rule out the capacity. This is
+   the core argument for curtailment-based planning.
+   ![voltage duration curves](results/annual/voltage_duration_curves.png)
+4. **Curtailment is concentrated in spring.** At the budget capacity, May
+   alone loses 13.6 % of its potential yield (≈ 40 % of the annual
+   curtailed energy), while October–February lose nothing. All of it
+   falls between 08:00 and 14:00.
+   ![curtailment heatmap](results/annual/curtailment_heatmap.png)
+   ![monthly energy](results/annual/monthly_energy.png)
+
 ### Limitations (worth discussing in a report)
 
-* **Annual curtailment from 12 typical days** (one per month, picked by
-  median PV energy) is an approximation. Individual months are noisy:
-  May's typical day curtails 40 % at 2 MW/bus, June's 0 %. A full
-  8 760-step simulation would be more accurate (a few minutes per
-  capacity with `numba` installed).
+* **12 typical days** (`run_study.py`) are a rough approximation of the
+  year: individual months are noisy (May's typical day curtails 40 % at
+  2 MW/bus, June's 0 %). Use `annual_study.py` for annual figures.
+* **Hourly resolution** averages out short PV peaks (cloud edges). Run
+  `annual_study.py --fine` for 15-min steps (≈ 4× slower).
+* **The screening margin** (1.03 p.u.) is validated on a high-PV week, not
+  proven for every possible network. Lower `--screen-v` if you change the
+  Q(U) curve or the network.
 * **Coarse, uniform curtailment.** The controller curtails all units
   together in 20 % steps, so curtailment jumps from 0 % to 8 % between
   1.17 and 1.2 MW/bus on the design day. Per-unit, finer or OPF-based

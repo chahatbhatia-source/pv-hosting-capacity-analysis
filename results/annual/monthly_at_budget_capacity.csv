@@ -1,4 +1,4 @@
-time,potential_mwh,curtailed_mwh,curtailed_pct
+month,potential_mwh,curtailed_mwh,curtailed_pct
 1,465.21,0.0,0.0
 2,749.822,0.0,0.0
 3,1359.323,35.794,2.633
