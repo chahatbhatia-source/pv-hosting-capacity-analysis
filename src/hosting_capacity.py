@@ -27,14 +27,25 @@ import pandas as pd
 import pandapower as pp
 
 import network as netmod
-from timeseries_sim import run_day, summarize_violations
+from timeseries_sim import run_day, summarize_violations, load_multipliers, step_hours
 
 
-def _worst_case_step(load_profile: pd.Series, pv_profile: pd.Series) -> int:
+def _feeder_load_curve(load_profile, net=None) -> np.ndarray:
+    """Feeder-total normalized load (handles Series or res/com DataFrame)."""
+    if isinstance(load_profile, pd.Series) or net is None:
+        if isinstance(load_profile, pd.DataFrame):
+            return load_profile.mean(axis=1).to_numpy()
+        return load_profile.to_numpy()
+    mult = load_multipliers(net, load_profile)
+    p = net.load["p_mw_nominal"]
+    return (mult * p).sum(axis=1).to_numpy() / p.sum()
+
+
+def _worst_case_step(load_profile, pv_profile, net=None) -> int:
     """Index of the time step with the highest PV / lowest load ratio
     -- the classic reverse-power-flow stress point for hosting capacity.
     """
-    ratio = pv_profile.values / np.clip(load_profile.values, 1e-3, None)
+    ratio = pv_profile.to_numpy() / np.clip(_feeder_load_curve(load_profile, net), 1e-3, None)
     return int(np.argmax(ratio))
 
 
@@ -57,8 +68,10 @@ def per_bus_snapshot_capacity(net, buses, load_profile, pv_profile,
 
     Returns a pandas Series indexed by bus id (MW).
     """
-    w = _worst_case_step(load_profile, pv_profile)
-    load_scale, pv_scale = load_profile.values[w], pv_profile.values[w]
+    w = _worst_case_step(load_profile, pv_profile, net)
+    # per-load multiplier at the worst-case step (Series aligned to net.load)
+    load_scale = load_multipliers(net, load_profile).iloc[w]
+    pv_scale = pv_profile.to_numpy()[w]
 
     # Always scale from the frozen nominal ratings (see network.build_network),
     # never from net.load.p_mw/q_mvar directly -- those may already have been
@@ -175,9 +188,7 @@ def capacity_with_curtailment_budget(net, buses, load_profile, pv_profile, out_d
         except Exception:
             # non-convergence at extreme capacity -> treat as fully infeasible
             return 100.0, None, None, None
-        potential_mwh = cap * len(buses) * pv_profile.sum() * (
-            (pv_profile.index[1] - pv_profile.index[0]).seconds / 3600
-        )
+        potential_mwh = cap * len(buses) * pv_profile.sum() * step_hours(pv_profile)
         curtailed_mwh = curt_ctrl.energy_curtailed_mwh if curt_ctrl else 0.0
         pct = 100 * curtailed_mwh / potential_mwh if potential_mwh > 0 else 0.0
         return pct, out, curtailed_mwh, potential_mwh

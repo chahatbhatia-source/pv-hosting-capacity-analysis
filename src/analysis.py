@@ -104,12 +104,96 @@ def plot_before_after_comparison(summary_before: dict, summary_after: dict, out_
     return _save(fig, out_dir, name)
 
 
-def plot_pv_and_load_profiles(load_profile, pv_profile, out_dir, name="input_profiles.png"):
+def plot_pv_and_load_profiles(load_profile, pv_profile, out_dir, name="input_profiles.png",
+                              title="24h load and PV generation profiles"):
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(load_profile.index, load_profile.values, label="Load (normalized)", linewidth=1.8)
-    ax.plot(pv_profile.index, pv_profile.values, label="PV (normalized)", linewidth=1.8)
+    if isinstance(load_profile, pd.DataFrame):
+        for col in load_profile.columns:
+            ax.plot(load_profile.index, load_profile[col].values,
+                    label=f"Load - {col} (normalized)", linewidth=1.8)
+    else:
+        ax.plot(load_profile.index, load_profile.values, label="Load (normalized)", linewidth=1.8)
+    ax.plot(pv_profile.index, pv_profile.values, label="PV (p.u. of nameplate)", linewidth=1.8)
     ax.set_xlabel("Time")
     ax.set_ylabel("Normalized output [0-1]")
-    ax.set_title("24h load and PV generation profiles")
-    ax.legend()
+    ax.set_title(title)
+    ax.legend(fontsize=8)
+    return _save(fig, out_dir, name)
+
+
+# --------------------------------------------------------------------------
+# Real-data figures
+# --------------------------------------------------------------------------
+def plot_annual_overview(df: pd.DataFrame, out_dir, name="real_data_annual_overview.png"):
+    """Two-panel overview of a year of real data: daily PV energy and daily
+    min/max of the normalized loads - the 'data' figure for a report."""
+    daily_pv = df["pv"].resample("D").mean() * 24  # full-load hours per day
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    a1.bar(daily_pv.index, daily_pv.values, width=1.0, color="#e1a32a")
+    a1.set_ylabel("PV yield (kWh/kWp/day)")
+    a1.set_title("Real input data: one year (SimBench 2016, 15-min)")
+    for col, color in [("residential", "#2b7a78"), ("commercial", "#6a4c93")]:
+        if col in df:
+            d = df[col].resample("D")
+            a2.fill_between(daily_pv.index, d.min().values, d.max().values,
+                            alpha=0.35, color=color, label=f"{col} (daily min-max)")
+    a2.set_ylabel("Load (p.u. of annual peak)")
+    a2.legend(fontsize=8, loc="upper right")
+    return _save(fig, out_dir, name)
+
+
+def plot_profile_comparison(days: dict, synthetic_load, synthetic_pv, out_dir,
+                            name="synthetic_vs_real_profiles.png"):
+    """Overlay the synthetic design day on the real representative days."""
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    hours = np.arange(len(synthetic_pv)) * 24 / len(synthetic_pv)
+    a1.plot(hours, synthetic_pv.values, "k--", linewidth=2, label="synthetic")
+    a2.plot(hours, synthetic_load.values, "k--", linewidth=2, label="synthetic")
+    for label, d in days.items():
+        h = np.arange(len(d.pv)) * 24 / len(d.pv)
+        a1.plot(h, d.pv.values, linewidth=1.4, label=f"{label} ({d.date.date()})")
+        a2.plot(h, d.load["residential"].values, linewidth=1.4, label=label)
+    a1.set_title("PV (p.u. of nameplate)")
+    a2.set_title("Residential load (p.u. of annual peak)")
+    for a in (a1, a2):
+        a.set_xlabel("Hour of day")
+        a.set_xlim(0, 24)
+    a1.legend(fontsize=7)
+    return _save(fig, out_dir, name)
+
+
+def plot_seasonal_results(table: pd.DataFrame, out_dir, name="seasonal_comparison.png"):
+    """Bar charts of the per-day results table from run_study step 5."""
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.8))
+    x = np.arange(len(table))
+    axes[0].bar(x - 0.2, table["vmax_no_ctrl"], 0.4, label="no control", color="#c94c4c")
+    axes[0].bar(x + 0.2, table["vmax_ctrl"], 0.4, label="Q(U)+curtail", color="#2b7a78")
+    axes[0].axhline(1.05, color="crimson", linestyle="--", linewidth=1)
+    lo = min(table["vmax_no_ctrl"].min(), table["vmax_ctrl"].min())
+    axes[0].set_ylim(min(lo, 1.0) - 0.01, None)
+    axes[0].set_title("Max bus voltage (p.u.)")
+    axes[0].legend(fontsize=7)
+    axes[1].bar(x, table["overvoltage_steps_no_ctrl"], color="#c94c4c")
+    axes[1].set_title("Over-voltage bus-steps, no control")
+    axes[2].bar(x, table["curtailed_pct"], color="#e1a32a")
+    axes[2].set_title("Energy curtailed with control (%)")
+    for a in axes:
+        a.set_xticks(x)
+        a.set_xticklabels(table.index, rotation=25, ha="right", fontsize=8)
+    fig.tight_layout()
+    return _save(fig, out_dir, name)
+
+
+def plot_monthly_curtailment(monthly: pd.DataFrame, out_dir, budget_pct=5.0,
+                             name="monthly_curtailment.png"):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for cap, grp in monthly.groupby("capacity_mw"):
+        ax.plot(grp["month"], grp["curtailed_pct"], marker="o", label=f"{cap:.2f} MW/bus")
+    ax.axhline(budget_pct, color="crimson", linestyle="--", linewidth=1,
+               label=f"{budget_pct:.0f}% budget")
+    ax.set_xticks(range(1, 13))
+    ax.set_xlabel("Month (typical day simulated)")
+    ax.set_ylabel("Curtailed energy (% of potential)")
+    ax.set_title("Seasonality of curtailment (real data)")
+    ax.legend(fontsize=8)
     return _save(fig, out_dir, name)

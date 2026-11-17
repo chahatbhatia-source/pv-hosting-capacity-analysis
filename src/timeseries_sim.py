@@ -26,6 +26,31 @@ def _clear_controllers(net):
     net.controller = net.controller.iloc[0:0]
 
 
+def step_hours(profile) -> float:
+    """Duration of one time step (hours), from the profile's DatetimeIndex."""
+    if isinstance(profile.index, pd.DatetimeIndex) and len(profile) > 1:
+        return (profile.index[1] - profile.index[0]).total_seconds() / 3600
+    return 24.0 / len(profile)
+
+
+def load_multipliers(net, load_profile) -> pd.DataFrame:
+    """Per-load normalized multiplier for every time step (steps x loads).
+
+    `load_profile` is either
+      * a Series - one curve applied to every load (synthetic case), or
+      * a DataFrame with ``residential`` and ``commercial`` columns - CIGRE
+        loads named ``Load R*`` follow the residential curve, all others
+        (``Load CI*``) the commercial one (real-data case).
+    """
+    if isinstance(load_profile, pd.Series):
+        return pd.DataFrame({i: load_profile.to_numpy() for i in net.load.index})
+    is_res = net.load.name.str.contains("Load R")
+    return pd.DataFrame({
+        i: load_profile["residential" if is_res.at[i] else "commercial"].to_numpy()
+        for i in net.load.index
+    })
+
+
 def setup_time_series(net, buses, load_profile, gen_profile, pv_capacity_mw,
                        use_qu_control=False, use_curtailment=False,
                        v_min=0.95, v_max=1.05, line_max_pct=100.0):
@@ -44,12 +69,9 @@ def setup_time_series(net, buses, load_profile, gen_profile, pv_capacity_mw,
     # directly -- those get overwritten by ConstControl during every
     # time-series run, so reading them here would compound scaling errors
     # on any second/third run that reuses the same net object.
-    load_abs = pd.DataFrame(
-        {i: load_profile.values * net.load.at[i, "p_mw_nominal"] for i in net.load.index}
-    )
-    loadq_abs = pd.DataFrame(
-        {i: load_profile.values * net.load.at[i, "q_mvar_nominal"] for i in net.load.index}
-    )
+    mult = load_multipliers(net, load_profile)
+    load_abs = mult * net.load["p_mw_nominal"]
+    loadq_abs = mult * net.load["q_mvar_nominal"]
     ConstControl(net, element="load", variable="p_mw", element_index=net.load.index,
                  data_source=DFData(load_abs), profile_name=list(net.load.index))
     ConstControl(net, element="load", variable="q_mvar", element_index=net.load.index,
@@ -73,6 +95,7 @@ def setup_time_series(net, buses, load_profile, gen_profile, pv_capacity_mw,
         p_rated = [pv_capacity_mw.get(net.sgen.at[i, "bus"], 0.0) for i in sgen_abs.columns]
         curt_ctrl = CurtailmentController(net, sgen_idx=list(sgen_abs.columns), p_rated_mw=p_rated,
                                            v_min=v_min, v_max=v_max, line_max_pct=line_max_pct,
+                                           step_hours=step_hours(gen_profile),
                                            order=2, level=2)
 
     return n_steps, curt_ctrl
@@ -103,8 +126,9 @@ def run_day(net, buses, load_profile, gen_profile, pv_capacity_mw, out_dir,
         v_min=v_min, v_max=v_max, line_max_pct=line_max_pct,
     )
     ow = build_output_writer(net, out_dir, n_steps)
-    run_timeseries(net, time_steps=range(n_steps), output_writer=ow,
-                    verbose=False, max_iter=100)
+    # the OutputWriter registers itself in net.output_writer on creation;
+    # passing it again to run_timeseries is deprecated in pandapower >= 3
+    run_timeseries(net, time_steps=range(n_steps), verbose=False, max_iter=100)
     return ow.output, curt_ctrl
 
 

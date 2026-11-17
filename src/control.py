@@ -56,7 +56,10 @@ class QUDroopController(Controller):
         self.q_capability = q_capability
         self.tol = tol
         self.damping = damping  # under-relaxation to avoid limit-cycle oscillation
+        self.min_damping = 0.02
         self.applied = np.zeros(len(self.sgen_idx))
+        self._alpha = damping
+        self._last_delta = np.zeros(len(self.sgen_idx))
 
     def _droop_factor(self, v):
         """Continuous piecewise-linear droop factor in [-1, 1].
@@ -79,6 +82,8 @@ class QUDroopController(Controller):
 
     def initialize_control(self, net):
         self.applied[:] = 0.0
+        self._alpha = self.damping
+        self._last_delta[:] = 0.0
 
     def is_converged(self, net):
         if "res_bus" not in net or net.res_bus.empty:
@@ -98,7 +103,19 @@ class QUDroopController(Controller):
         # under-relaxed update: step only partway toward the new droop target
         # each iteration, which damps the voltage<->Q feedback loop and
         # prevents limit-cycle oscillation in meshed/short-line networks
-        blended = self.applied + self.damping * (target - self.applied)
+        #
+        # Adaptive damping: with a fixed factor alpha the fixed-point iteration
+        # only converges while alpha * (1 + k) < 2, where k is the local
+        # voltage->Q loop gain. On weak feeders with lots of PV, k reaches ~3
+        # and a fixed alpha = 0.5 sits exactly on the stability boundary,
+        # producing a period-2 limit cycle (ControllerNotConverged). Halving
+        # alpha whenever the update reverses direction guarantees the
+        # oscillation dies out; alpha is reset at every new time step.
+        delta = target - self.applied
+        if np.dot(delta, self._last_delta) < 0:
+            self._alpha = max(self._alpha * 0.5, self.min_damping)
+        self._last_delta = delta
+        blended = self.applied + self._alpha * delta
         q_new = blended * q_max
         net.sgen.loc[self.sgen_idx, "q_mvar"] = q_new
         self.applied = blended
@@ -116,7 +133,8 @@ class CurtailmentController(Controller):
 
     def __init__(self, net, sgen_idx, p_rated_mw, v_min=0.95, v_max=1.05,
                  line_max_pct=100.0, step_pct=0.20, p_floor_pct=0.0,
-                 tol=1e-5, order=1, level=1, in_service=True, **kwargs):
+                 step_hours=0.25, tol=1e-5, order=1, level=1, in_service=True,
+                 **kwargs):
         super().__init__(net, in_service=in_service, order=order, level=level,
                           initial_run=True, **kwargs)
         self.sgen_idx = list(sgen_idx)
@@ -126,6 +144,9 @@ class CurtailmentController(Controller):
         self.step_pct = step_pct
         self.p_floor_pct = p_floor_pct
         self.tol = tol
+        # duration of one time step in hours, used to convert curtailed MW
+        # into MWh. Must match the profile resolution (1.0 for hourly data).
+        self.step_hours = float(step_hours)
         self.curtail_frac = np.zeros(len(self.sgen_idx))
         self.energy_curtailed_mwh = 0.0
 
@@ -165,4 +186,4 @@ class CurtailmentController(Controller):
         )
         self.energy_curtailed_mwh += float(
             np.sum(np.maximum(p_before - net.sgen.loc[self.sgen_idx, "p_mw"].values, 0))
-        ) * (15 / 60)  # 15-min step -> MWh
+        ) * self.step_hours  # MW x h -> MWh
