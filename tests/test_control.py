@@ -91,3 +91,40 @@ def test_curtailment_reduces_power_under_forced_overvoltage():
     p_after = net.sgen.at[sgen_idx, "p_mw"]
     assert p_after <= p_before, "curtailment must not increase active power"
     assert net.res_bus.vm_pu.max() <= 1.05 + 1e-6, "overvoltage should be resolved"
+
+
+def test_qu_control_converges_on_heavily_loaded_feeder():
+    """Regression: with a fixed under-relaxation factor of 0.5 the Q(U)
+    iteration entered a period-2 limit cycle (ControllerNotConverged) at
+    >= ~1.3 MW/bus, because the local voltage->Q loop gain reached ~3.
+    Adaptive damping must make every case converge."""
+    import pandas as pd
+    from timeseries_sim import run_day
+
+    net = network.build_network()
+    buses = network.candidate_buses(net)
+    network.attach_sgen_fleet(net, buses)
+    t = pd.date_range("2026-06-21", periods=24, freq="h")
+    pv = pd.Series(np.where((t.hour >= 11) & (t.hour < 15), 0.9, 0.0), index=t)
+    load = pd.Series(0.3, index=t)
+    for cap in (1.3, 2.5):
+        out, _ = run_day(net, buses, load, pv, {b: cap for b in buses},
+                         "/tmp/hc_qu_conv", use_qu_control=True, use_curtailment=True)
+        assert len(out["res_bus.vm_pu"]) == 24
+        assert out["res_bus.vm_pu"].max().max() <= 1.05 + 1e-6
+
+
+def test_curtailment_ignores_undervoltage():
+    """Regression: curtailing PV cannot fix an under-voltage (it makes it
+    worse), so the controller must not react to v < v_min."""
+    net = network.build_network()
+    buses = network.candidate_buses(net)
+    sgens = network.attach_sgen_fleet(net, buses, p_mw=0.1)
+    # at nominal peak load the CIGRE feeder already sags to ~0.936 p.u.
+    # while lines stay < 80 % loaded -> pure under-voltage case
+    pp.runpp(net)
+    assert net.res_bus.vm_pu.min() < 0.95
+    assert net.res_bus.vm_pu.max() <= 1.05
+    ctrl = CurtailmentController(net, sgen_idx=sgens, p_rated_mw=[0.1] * len(sgens),
+                                 v_min=0.95, v_max=1.05)
+    assert ctrl.is_converged(net), "under-voltage alone must not trigger curtailment"

@@ -1,0 +1,5 @@
+,capacity_mw_per_bus,feeder_total_mw
+no control,0.82,10.664
+Q(U) droop only,1.184,15.387
+"Q(U) + curtailment, <= 5% on design day",1.172,15.234
+"Q(U) + curtailment, <= 5% annual",1.693,22.004

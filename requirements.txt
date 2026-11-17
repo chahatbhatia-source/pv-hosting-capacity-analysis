@@ -3,3 +3,7 @@ pandas>=2.0
 numpy>=1.24
 matplotlib>=3.7
 pytest>=7.4
+# real-data profiles: only needed to (re)build data/simbench_2016_profiles.csv
+simbench>=1.5
+# optional, makes pandapower power flows several times faster
+numba>=0.58

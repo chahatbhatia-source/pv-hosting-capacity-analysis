@@ -1,0 +1,8 @@
+,capacity_mw_per_bus,feeder_total_mw
+"no control, zero violations (full year)",0.797,10.359
+"Q(U) only, zero violations (full year)",1.133,14.727
+"Q(U) + curtailment, <= 5% annual (full year)",1.68,21.834
+[run_study] no control,0.82,10.66
+[run_study] Q(U) droop only,1.184,15.392
+"[run_study] Q(U) + curtailment, <= 5% on design day",1.172,15.236
+"[run_study] Q(U) + curtailment, <= 5% annual",1.693,22.009

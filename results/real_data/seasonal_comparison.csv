@@ -1,0 +1,5 @@
+,date,pv_kwh_per_kwp,vmax_no_ctrl,overvoltage_steps_no_ctrl,vmax_ctrl,overvoltage_steps_ctrl,vmin,max_line_loading_pct,curtailed_pct
+worst_case,2016-05-26,4.1353,1.0439,0,1.0314,0,0.9998,49.0902,0.0
+summer_peak,2016-05-13,4.2138,1.03,0,1.03,0,0.9893,41.0404,0.0
+typical_summer,2016-07-11,2.5861,1.03,0,1.03,0,0.977,47.2389,0.0
+typical_winter,2016-01-15,0.6973,1.03,0,1.03,0,0.9688,58.764,0.0
